@@ -1,104 +1,157 @@
-import { MongoClient } from 'mongodb'
-import { v4 as uuidv4 } from 'uuid'
-import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server';
+import { MongoClient } from 'mongodb';
 
-// MongoDB connection
-let client
-let db
+const MONGO_URL = process.env.MONGO_URL || 'mongodb://localhost:27017/mura_fitness';
+let client;
 
-async function connectToMongo() {
+async function connectToDatabase() {
   if (!client) {
-    client = new MongoClient(process.env.MONGO_URL)
-    await client.connect()
-    db = client.db(process.env.DB_NAME)
+    client = new MongoClient(MONGO_URL);
+    await client.connect();
   }
-  return db
+  return client.db('mura_fitness');
 }
 
-// Helper function to handle CORS
-function handleCORS(response) {
-  response.headers.set('Access-Control-Allow-Origin', '*')
-  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  response.headers.set('Access-Control-Allow-Credentials', 'true')
-  return response
-}
-
-// OPTIONS handler for CORS
-export async function OPTIONS() {
-  return handleCORS(new NextResponse(null, { status: 200 }))
-}
-
-// Route handler function
-async function handleRoute(request, { params }) {
-  const { path = [] } = params
-  const route = `/${path.join('/')}`
-  const method = request.method
-
+// GET - Fetch data
+export async function GET(request, { params }) {
   try {
-    const db = await connectToMongo()
-
-    // Root endpoint - GET /api/root (since /api/ is not accessible with catch-all)
-    if (route === '/root' && method === 'GET') {
-      return handleCORS(NextResponse.json({ message: "Hello World" }))
-    }
-    // Root endpoint - GET /api/root (since /api/ is not accessible with catch-all)
-    if (route === '/' && method === 'GET') {
-      return handleCORS(NextResponse.json({ message: "Hello World" }))
-    }
-
-    // Status endpoints - POST /api/status
-    if (route === '/status' && method === 'POST') {
-      const body = await request.json()
+    const path = params.path ? params.path.join('/') : '';
+    const db = await connectToDatabase();
+    
+    switch (path) {
+      case 'classes':
+        const classes = await db.collection('classes').find({}).toArray();
+        return NextResponse.json(classes);
       
-      if (!body.client_name) {
-        return handleCORS(NextResponse.json(
-          { error: "client_name is required" }, 
-          { status: 400 }
-        ))
-      }
-
-      const statusObj = {
-        id: uuidv4(),
-        client_name: body.client_name,
-        timestamp: new Date()
-      }
-
-      await db.collection('status_checks').insertOne(statusObj)
-      return handleCORS(NextResponse.json(statusObj))
-    }
-
-    // Status endpoints - GET /api/status
-    if (route === '/status' && method === 'GET') {
-      const statusChecks = await db.collection('status_checks')
-        .find({})
-        .limit(1000)
-        .toArray()
-
-      // Remove MongoDB's _id field from response
-      const cleanedStatusChecks = statusChecks.map(({ _id, ...rest }) => rest)
+      case 'pricing':
+        const pricing = await db.collection('pricing').find({}).toArray();
+        return NextResponse.json(pricing);
       
-      return handleCORS(NextResponse.json(cleanedStatusChecks))
+      case 'coaches':
+        const coaches = await db.collection('coaches').find({}).toArray();
+        return NextResponse.json(coaches);
+      
+      case 'testimonials':
+        const testimonials = await db.collection('testimonials').find({}).toArray();
+        return NextResponse.json(testimonials);
+      
+      case 'memberships':
+        const memberships = await db.collection('memberships').find({}).toArray();
+        return NextResponse.json(memberships);
+      
+      default:
+        return NextResponse.json({ message: 'Welcome to MURA Fitness API' });
     }
-
-    // Route not found
-    return handleCORS(NextResponse.json(
-      { error: `Route ${route} not found` }, 
-      { status: 404 }
-    ))
-
   } catch (error) {
-    console.error('API Error:', error)
-    return handleCORS(NextResponse.json(
-      { error: "Internal server error" }, 
-      { status: 500 }
-    ))
+    console.error('GET Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// Export all HTTP methods
-export const GET = handleRoute
-export const POST = handleRoute
-export const PUT = handleRoute
-export const DELETE = handleRoute
-export const PATCH = handleRoute
+// POST - Create new data
+export async function POST(request, { params }) {
+  try {
+    const path = params.path ? params.path.join('/') : '';
+    const body = await request.json();
+    const db = await connectToDatabase();
+    
+    switch (path) {
+      case 'contact':
+        const contactData = {
+          ...body,
+          createdAt: new Date().toISOString(),
+          id: Date.now().toString()
+        };
+        await db.collection('contacts').insertOne(contactData);
+        return NextResponse.json({ message: 'Contact form submitted successfully', data: contactData });
+      
+      case 'memberships':
+        const membershipData = {
+          ...body,
+          createdAt: new Date().toISOString(),
+          id: Date.now().toString()
+        };
+        await db.collection('memberships').insertOne(membershipData);
+        return NextResponse.json({ message: 'Membership created successfully', data: membershipData });
+      
+      case 'bookings':
+        const bookingData = {
+          ...body,
+          createdAt: new Date().toISOString(),
+          id: Date.now().toString(),
+          status: 'pending'
+        };
+        await db.collection('bookings').insertOne(bookingData);
+        return NextResponse.json({ message: 'Booking created successfully', data: bookingData });
+      
+      default:
+        return NextResponse.json({ error: 'Invalid endpoint' }, { status: 404 });
+    }
+  } catch (error) {
+    console.error('POST Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+// PUT - Update existing data
+export async function PUT(request, { params }) {
+  try {
+    const path = params.path ? params.path.join('/') : '';
+    const body = await request.json();
+    const db = await connectToDatabase();
+    
+    const pathParts = path.split('/');
+    const collection = pathParts[0];
+    const id = pathParts[1];
+    
+    if (!id) {
+      return NextResponse.json({ error: 'ID is required for updating' }, { status: 400 });
+    }
+    
+    const updateData = {
+      ...body,
+      updatedAt: new Date().toISOString()
+    };
+    
+    const result = await db.collection(collection).updateOne(
+      { id: id },
+      { $set: updateData }
+    );
+    
+    if (result.matchedCount === 0) {
+      return NextResponse.json({ error: 'Record not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ message: 'Record updated successfully' });
+  } catch (error) {
+    console.error('PUT Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+// DELETE - Delete data
+export async function DELETE(request, { params }) {
+  try {
+    const path = params.path ? params.path.join('/') : '';
+    const db = await connectToDatabase();
+    
+    const pathParts = path.split('/');
+    const collection = pathParts[0];
+    const id = pathParts[1];
+    
+    if (!id) {
+      return NextResponse.json({ error: 'ID is required for deletion' }, { status: 400 });
+    }
+    
+    const result = await db.collection(collection).deleteOne({ id: id });
+    
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ error: 'Record not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ message: 'Record deleted successfully' });
+  } catch (error) {
+    console.error('DELETE Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
